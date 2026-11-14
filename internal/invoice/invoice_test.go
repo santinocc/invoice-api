@@ -1,6 +1,9 @@
 package invoice
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestLineItemAmount(t *testing.T) {
 	tests := []struct {
@@ -71,6 +74,52 @@ func TestCalculateTotals(t *testing.T) {
 			}
 			if inv.Total != tt.wantTotal {
 				t.Errorf("Total = %d, want %d", inv.Total, tt.wantTotal)
+			}
+		})
+	}
+}
+
+// validInvoice returns an invoice that passes Validate.
+// Each test case changes one field to make it invalid.
+func validInvoice() Invoice {
+	return Invoice{
+		Vendor:    "Example Supplies",
+		IssueDate: "2026-11-01",
+		DueDate:   "2026-11-30",
+		Items: []LineItem{
+			{Description: "Paper", Quantity: 1, UnitPrice: 1000, TaxRate: 10},
+		},
+	}
+}
+
+func TestValidate(t *testing.T) {
+	t.Run("valid invoice", func(t *testing.T) {
+		if err := validInvoice().Validate(); err != nil {
+			t.Fatalf("Validate() = %v, want nil", err)
+		}
+	})
+
+	tests := []struct {
+		name   string
+		change func(inv *Invoice)
+	}{
+		{name: "missing vendor", change: func(inv *Invoice) { inv.Vendor = "" }},
+		{name: "bad issue date", change: func(inv *Invoice) { inv.IssueDate = "01/11/2026" }},
+		{name: "bad due date", change: func(inv *Invoice) { inv.DueDate = "next week" }},
+		{name: "due before issue", change: func(inv *Invoice) { inv.DueDate = "2026-10-01" }},
+		{name: "no items", change: func(inv *Invoice) { inv.Items = nil }},
+		{name: "zero quantity", change: func(inv *Invoice) { inv.Items[0].Quantity = 0 }},
+		{name: "negative price", change: func(inv *Invoice) { inv.Items[0].UnitPrice = -1 }},
+		{name: "unsupported tax rate", change: func(inv *Invoice) { inv.Items[0].TaxRate = 5 }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inv := validInvoice()
+			tt.change(&inv)
+			err := inv.Validate()
+			if !errors.Is(err, ErrInvalidInvoice) {
+				t.Errorf("Validate() = %v, want ErrInvalidInvoice", err)
 			}
 		})
 	}
