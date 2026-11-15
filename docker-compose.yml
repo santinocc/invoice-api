@@ -1,0 +1,24 @@
+# Local PostgreSQL for development and tests.
+# Start:  docker compose up -d
+# Stop:   docker compose down        (keeps the data)
+# Reset:  docker compose down -v     (deletes the data; schema.sql runs again on next start)
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: invoice
+      POSTGRES_PASSWORD: invoice # local development only, not a real secret
+      POSTGRES_DB: invoice
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U invoice -d invoice"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  pgdata:
