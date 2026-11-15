@@ -2,6 +2,7 @@ package invoice
 
 import (
 	"errors"
+	"sync"
 	"testing"
 )
 
@@ -34,4 +35,25 @@ func TestMemoryStoreGetNotFound(t *testing.T) {
 		t.Errorf("Get() error = %v, want ErrNotFound", err)
 	}
 
+}
+
+func TestMemoryStoreConcurrentCreate(t *testing.T) {
+	s := NewMemoryStore()
+	const n = 100
+
+	var wg sync.WaitGroup
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := s.Create(validInvoice()); err != nil {
+				t.Errorf("Create() error = %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if len(s.invoices) != n {
+		t.Errorf("stored %d invoices, want %d", len(s.invoices), n)
+	}
 }
