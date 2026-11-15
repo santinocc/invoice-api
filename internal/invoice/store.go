@@ -1,6 +1,7 @@
 package invoice
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -11,8 +12,8 @@ var ErrNotFound = errors.New("invoice not found")
 
 // Store saves and loads invoices.
 type Store interface {
-	Create(inv Invoice) (Invoice, error)
-	Get(id string) (Invoice, error)
+	Create(ctx context.Context, inv Invoice) (Invoice, error)
+	Get(ctx context.Context, id string) (Invoice, error)
 }
 
 // MemoryStore keeps invoices in a map. It is safe for concurrent use.
@@ -28,7 +29,7 @@ func NewMemoryStore() *MemoryStore {
 }
 
 // Create gives the invoice a new ID, saves it, and returns it.
-func (s *MemoryStore) Create(inv Invoice) (Invoice, error) {
+func (s *MemoryStore) Create(ctx context.Context, inv Invoice) (Invoice, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -39,7 +40,7 @@ func (s *MemoryStore) Create(inv Invoice) (Invoice, error) {
 }
 
 // Get returns the invoice with the given ID, or ErrNotFound.
-func (s *MemoryStore) Get(id string) (Invoice, error) {
+func (s *MemoryStore) Get(ctx context.Context, id string) (Invoice, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

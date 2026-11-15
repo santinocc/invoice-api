@@ -9,15 +9,15 @@ import (
 func TestMemoryStoreCreateAndGet(t *testing.T) {
 	s := NewMemoryStore()
 
-	created, err := s.Create(validInvoice())
+	created, err := s.Create(t.Context(), validInvoice())
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
 	if created.ID == "" {
-		t.Fatal("Create() did not set and ID")
+		t.Fatal("Create() did not set an ID")
 	}
 
-	got, err := s.Get(created.ID)
+	got, err := s.Get(t.Context(), created.ID)
 	if err != nil {
 		t.Fatalf("Get(%q) error = %v", created.ID, err)
 	}
@@ -29,7 +29,7 @@ func TestMemoryStoreCreateAndGet(t *testing.T) {
 func TestMemoryStoreGetNotFound(t *testing.T) {
 	s := NewMemoryStore()
 
-	_, err := s.Get("inv_999")
+	_, err := s.Get(t.Context(), "inv_999")
 
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("Get() error = %v, want ErrNotFound", err)
@@ -46,7 +46,7 @@ func TestMemoryStoreConcurrentCreate(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := s.Create(validInvoice()); err != nil {
+			if _, err := s.Create(t.Context(), validInvoice()); err != nil {
 				t.Errorf("Create() error = %v", err)
 			}
 		}()

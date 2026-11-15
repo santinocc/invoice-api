@@ -26,7 +26,7 @@ func (s *Server) handleCreateInvoice(w http.ResponseWriter, r *http.Request) {
 	}
 	inv.CalculateTotals()
 
-	created, err := s.store.Create(inv)
+	created, err := s.store.Create(r.Context(), inv)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not save the invoice")
 		return
@@ -37,7 +37,7 @@ func (s *Server) handleCreateInvoice(w http.ResponseWriter, r *http.Request) {
 // handleGetInvoice handles GET /invoices/{id}.
 func (s *Server) handleGetInvoice(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	inv, err := s.store.Get(id)
+	inv, err := s.store.Get(r.Context(), id)
 	if errors.Is(err, invoice.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "invoice not found")
 		return
