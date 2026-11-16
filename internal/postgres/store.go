@@ -7,6 +7,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -36,6 +37,10 @@ func Open(ctx context.Context, url string) (*sql.DB, error) {
 type Store struct {
 	db *sql.DB
 }
+
+// This line does not run anything: it makes the build fail
+// if Store ever stops satisfying the invoice.Store interface.
+var _ invoice.Store = (*Store)(nil)
 
 // NewStore returns a Store that uses db.
 func NewStore(db *sql.DB) *Store {
@@ -76,5 +81,48 @@ func (s *Store) Create(ctx context.Context, inv invoice.Invoice) (invoice.Invoic
 	if err := tx.Commit(); err != nil {
 		return invoice.Invoice{}, fmt.Errorf("commit: %w", err)
 	}
+	return inv, nil
+}
+
+// Get returns the invoice with the given ID and its items, or invoice.ErrNotFound
+func (s *Store) Get(ctx context.Context, id string) (invoice.Invoice, error) {
+	var inv invoice.Invoice
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, vendor, issue_date::text, due_date::text, subtotal, tax, total
+	FROM invoices
+	WHERE id = $1`,
+		id,
+	).Scan(&inv.ID, &inv.Vendor, &inv.IssueDate, &inv.DueDate, &inv.Subtotal, &inv.Tax, &inv.Total)
+	if errors.Is(err, sql.ErrNoRows) {
+		return invoice.Invoice{}, invoice.ErrNotFound
+	}
+	if err != nil {
+		return invoice.Invoice{}, fmt.Errorf("select invoice: %w", err)
+	}
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT description, quantity, unit_price, tax_rate
+FROM invoice_items
+WHERE invoice_id = $1
+ORDER BY position`,
+		id,
+	)
+	if err != nil {
+		return invoice.Invoice{}, fmt.Errorf("select items: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var item invoice.LineItem
+		if err := rows.Scan(&item.Description, &item.Quantity, &item.UnitPrice, &item.TaxRate); err != nil {
+			return invoice.Invoice{},
+				fmt.Errorf("scan item: %w", err)
+		}
+		inv.Items = append(inv.Items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return invoice.Invoice{}, fmt.Errorf("read items: %w", err)
+	}
+
 	return inv, nil
 }
