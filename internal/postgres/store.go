@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" driver for database/sql
 
 	"github.com/santinocc/invoice-api/internal/invoice"
@@ -41,6 +42,10 @@ type Store struct {
 // This line does not run anything: it makes the build fail
 // if Store ever stops satisfying the invoice.Store interface.
 var _ invoice.Store = (*Store)(nil)
+
+// invalidTextRepresentation is the Postgres error code for a value that
+// cannot be read as its column's type, such as "inv_999" for a UUID column.
+const invalidTextRepresentation = "22P02"
 
 // NewStore returns a Store that uses db.
 func NewStore(db *sql.DB) *Store {
@@ -94,6 +99,10 @@ func (s *Store) Get(ctx context.Context, id string) (invoice.Invoice, error) {
 		id,
 	).Scan(&inv.ID, &inv.Vendor, &inv.IssueDate, &inv.DueDate, &inv.Subtotal, &inv.Tax, &inv.Total)
 	if errors.Is(err, sql.ErrNoRows) {
+		return invoice.Invoice{}, invoice.ErrNotFound
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == invalidTextRepresentation {
 		return invoice.Invoice{}, invoice.ErrNotFound
 	}
 	if err != nil {
