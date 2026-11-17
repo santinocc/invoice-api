@@ -88,7 +88,7 @@ type Invoice struct {
 	Vendor    string     `json:"vendor"`
 	IssueDate string     `json:"issue_date"`
 	DueDate   string     `json:"due_date"`
-	Items     []LineItem `json:"items"`
+	Items     []LineItem `json:"items,omitempty"` // empty in list results (summaries)
 	Subtotal  int64      `json:"subtotal"`
 	Tax       int64      `json:"tax"`
 	Total     int64      `json:"total"`
