@@ -24,6 +24,7 @@ func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("POST /invoices", s.handleCreateInvoice)
+	mux.HandleFunc("GET /invoices", s.handleListInvoices)
 	mux.HandleFunc("GET /invoices/{id}", s.handleGetInvoice)
 	return mux
 }

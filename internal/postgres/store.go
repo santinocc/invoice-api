@@ -170,6 +170,11 @@ func (s *Store) List(ctx context.Context, f invoice.ListFilter) ([]invoice.Invoi
 	}
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == invalidTextRepresentation {
+		// A cursor ID that is not a UUID: the client changed the cursor.
+		return nil, fmt.Errorf("%w: bad cursor", invoice.ErrInvalidFilter)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("select invoices: %w", err)
 	}

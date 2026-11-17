@@ -7,10 +7,18 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 )
 
 // ErrNotFound is returned when no invoice has the given ID.
 var ErrNotFound = errors.New("invoice not found")
+
+// ErrInvalidFilter is returned when a ListFilter has a bad value,
+// such as a malformed date, a limit out of range, or a tampered cursor.
+var ErrInvalidFilter = errors.New("invalid filter")
+
+// MaxListLimit is the largest page List may be asked for.
+const MaxListLimit = 100
 
 // Store saves and loads invoices.
 type Store interface {
@@ -101,4 +109,26 @@ func (s *MemoryStore) List(ctx context.Context, f ListFilter) ([]Invoice, error)
 		result = result[:f.Limit]
 	}
 	return result, nil
+}
+
+// Validate checks the filter's dates and limit.
+// Every error wraps ErrInvalidFilter.
+func (f ListFilter) Validate() error {
+	if f.Limit < 1 || f.Limit > MaxListLimit {
+		return fmt.Errorf("%w: limit must be between 1 and %d", ErrInvalidFilter, MaxListLimit)
+	}
+
+	if f.DueBefore != "" {
+		if _, err := time.Parse(dateLayout, f.DueBefore); err != nil {
+			return fmt.Errorf("%w: due_before must be a date like 2026-12-31", ErrInvalidFilter)
+		}
+	}
+
+	if f.AfterDueDate != "" {
+		if _, err := time.Parse(dateLayout, f.AfterDueDate); err != nil {
+			return fmt.Errorf("%w: bad cursor", ErrInvalidFilter)
+		}
+	}
+
+	return nil
 }
