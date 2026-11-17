@@ -19,3 +19,9 @@ CREATE TABLE invoice_items (
     tax_rate SMALLINT NOT NULL CHECK (tax_rate IN (8, 10)),
     PRIMARY KEY (invoice_id, position)
 );
+
+-- List invoices sorted by due date, paged with a (due_date, id) cursor.
+CREATE INDEX invoices_due_date_id ON invoices (due_date, id);
+
+-- The same list filtered by one vendor. Vendor comes first: the leftmost-prefix rule.
+CREATE INDEX invoices_vendor_due_date_id ON invoices (vendor, due_date, id);

@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -134,4 +135,58 @@ ORDER BY position`,
 	}
 
 	return inv, nil
+}
+
+// List returns summaries (no items) of the invoices that match f,
+// sorted by due date, then ID.
+func (s *Store) List(ctx context.Context, f invoice.ListFilter) ([]invoice.Invoice, error) {
+	var conds []string // SQL conditions, joined with AND
+	var args []any     // their values, in the order of $1, $2, ...
+
+	if f.Vendor != "" {
+		args = append(args, f.Vendor)
+		conds = append(conds, fmt.Sprintf("vendor = $%d", len(args)))
+	}
+	// due-before filter
+	if f.DueBefore != "" {
+		args = append(args, f.DueBefore)
+		conds = append(conds, fmt.Sprintf("due_date < $%d", len(args)))
+	}
+
+	// cursor: a row comparison, so ID breaks ties between equal due dates
+	if f.AfterDueDate != "" {
+		args = append(args, f.AfterDueDate, f.AfterID)
+		conds = append(conds, fmt.Sprintf("(due_date, id) > ($%d, $%d)", len(args)-1, len(args)))
+	}
+
+	query := `SELECT id, vendor, issue_date::text, due_date::text, subtotal, tax, total FROM invoices`
+	if len(conds) > 0 {
+		query += " WHERE " + strings.Join(conds, " AND ")
+	}
+	query += " ORDER BY due_date, id"
+	if f.Limit > 0 {
+		args = append(args, f.Limit)
+		query += fmt.Sprintf(" LIMIT $%d", len(args))
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("select invoices: %w", err)
+	}
+	defer rows.Close()
+
+	var result []invoice.Invoice
+	for rows.Next() {
+		var inv invoice.Invoice
+		if err := rows.Scan(&inv.ID, &inv.Vendor, &inv.IssueDate, &inv.DueDate, &inv.Subtotal, &inv.Tax, &inv.Total); err != nil {
+			return nil,
+				fmt.Errorf("scan invoice: %w", err)
+		}
+		result = append(result, inv)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read invoices: %w", err)
+	}
+
+	return result, nil
 }

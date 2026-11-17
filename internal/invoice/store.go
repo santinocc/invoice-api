@@ -16,6 +16,7 @@ var ErrNotFound = errors.New("invoice not found")
 type Store interface {
 	Create(ctx context.Context, inv Invoice) (Invoice, error)
 	Get(ctx context.Context, id string) (Invoice, error)
+	List(ctx context.Context, f ListFilter) ([]Invoice, error)
 }
 
 // ListFilter selects which invoices List returns. Empty fields match everything.
