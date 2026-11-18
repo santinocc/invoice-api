@@ -25,6 +25,7 @@ type Store interface {
 	Create(ctx context.Context, inv Invoice) (Invoice, error)
 	Get(ctx context.Context, id string) (Invoice, error)
 	List(ctx context.Context, f ListFilter) ([]Invoice, error)
+	FindByTotals(ctx context.Context, totals []int64) ([]Invoice, error)
 }
 
 // ListFilter selects which invoices List returns. Empty fields match everything.
@@ -131,4 +132,29 @@ func (f ListFilter) Validate() error {
 	}
 
 	return nil
+}
+
+// FindByTotals returns summaries (no items) of the invoices whose Total is
+// one of totals, sorted by due date, then ID.
+func (s *MemoryStore) FindByTotals(ctx context.Context, totals []int64) ([]Invoice, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	want := map[int64]bool{}
+	for _, total := range totals {
+		want[total] = true
+	}
+
+	var result []Invoice
+	for _, inv := range s.invoices {
+		if want[inv.Total] {
+			inv.Items = nil
+			result = append(result, inv)
+		}
+	}
+
+	slices.SortFunc(result, func(a, b Invoice) int {
+		return cmp.Or(cmp.Compare(a.DueDate, b.DueDate), cmp.Compare(a.ID, b.ID))
+	})
+	return result, nil
 }

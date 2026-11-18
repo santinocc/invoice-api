@@ -208,3 +208,38 @@ func ids(invs []invoice.Invoice) []string {
 	}
 	return out
 }
+
+func TestStoreFindByTotals(t *testing.T) {
+	s := newTestStore(t)
+	var created []invoice.Invoice
+	for _, due := range []string{"2026-12-15", "2026-11-30"} { // both total 2266
+		inv, err := s.Create(t.Context(), testInvoice("ACME", due))
+		if err != nil {
+			t.Fatal(err)
+		}
+		created = append(created, inv)
+	}
+
+	got, err := s.FindByTotals(t.Context(), []int64{2266, 999})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Sorted by due date: the second invoice created is due first.
+	want := []string{created[1].ID, created[0].ID}
+	if !slices.Equal(ids(got), want) {
+		t.Errorf("got %v, want %v", ids(got), want)
+	}
+	for _, inv := range got {
+		if inv.Items != nil {
+			t.Errorf("%s has items; FindByTotals must return summaries only", inv.ID)
+		}
+	}
+
+	none, err := s.FindByTotals(t.Context(), []int64{999})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(none) != 0 {
+		t.Errorf("total 999: got %d invoices, want 0", len(none))
+	}
+}

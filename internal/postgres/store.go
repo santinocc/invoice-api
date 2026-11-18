@@ -195,3 +195,32 @@ func (s *Store) List(ctx context.Context, f invoice.ListFilter) ([]invoice.Invoi
 
 	return result, nil
 }
+
+// FindByTotals returns summaries (no items) of the invoices whose total is
+// one of totals, sorted by due date, then ID.
+func (s *Store) FindByTotals(ctx context.Context, totals []int64) ([]invoice.Invoice, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, vendor, issue_date::text, due_date::text, subtotal, tax, total
+                FROM invoices
+                WHERE total = ANY($1)
+                ORDER BY due_date, id`,
+		totals,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("select invoices by total: %w", err)
+	}
+	defer rows.Close()
+
+	var result []invoice.Invoice
+	for rows.Next() {
+		var inv invoice.Invoice
+		if err := rows.Scan(&inv.ID, &inv.Vendor, &inv.IssueDate, &inv.DueDate, &inv.Subtotal, &inv.Tax, &inv.Total); err != nil {
+			return nil, fmt.Errorf("scan invoice: %w", err)
+		}
+		result = append(result, inv)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read invoices: %w", err)
+	}
+	return result, nil
+}

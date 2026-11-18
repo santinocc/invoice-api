@@ -25,3 +25,6 @@ CREATE INDEX invoices_due_date_id ON invoices (due_date, id);
 
 -- The same list filtered by one vendor. Vendor comes first: the leftmost-prefix rule.
 CREATE INDEX invoices_vendor_due_date_id ON invoices (vendor, due_date, id);
+
+-- Reconciliation looks up open invoices by exact total: WHERE total = ANY($1).
+CREATE INDEX invoices_total ON invoices (total);
