@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/santinocc/invoice-api/internal/httpapi"
 	"github.com/santinocc/invoice-api/internal/invoice"
+	"github.com/santinocc/invoice-api/internal/postgres"
 )
 
 func main() {
@@ -18,7 +20,26 @@ func main() {
 		port = "8080"
 	}
 
-	api := httpapi.NewServer(invoice.NewMemoryStore())
+	// Postgres when DATABASE_URL is set, memory otherwise. If the database
+	// cannot be reached, exit at once (fail fast): never fall back to memory
+	// silently, because that would accept invoices and then lose them.
+	var store invoice.Store
+	if url := os.Getenv("DATABASE_URL"); url != "" {
+		db, err := postgres.Open(context.Background(), url)
+		if err != nil {
+			slog.Error("connect to database", "err", err)
+			os.Exit(1)
+		}
+
+		defer db.Close()
+		store = postgres.NewStore(db)
+		slog.Info("storage", "type", "postgres")
+	} else {
+		store = invoice.NewMemoryStore()
+		slog.Info("storage", "type", "memory", "note", "invoices are lost on restart")
+	}
+
+	api := httpapi.NewServer(store)
 
 	srv := &http.Server{
 		Addr:              ":" + port,
