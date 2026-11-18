@@ -1,27 +1,29 @@
 # invoice-api
 
-A small invoice API written in Go, built as a learning project. It stores invoices in PostgreSQL (or in memory), calculates Japanese consumption tax (10% standard, 8% reduced), and lists invoices with filters and cursor pagination. A later stage adds reconciliation of bank transactions against open invoices.
+A small invoice API written in Go, built as a learning project. It stores invoices in PostgreSQL (or in memory), calculates Japanese consumption tax (10% standard, 8% reduced), lists invoices with filters and cursor pagination, and suggests which bank payment pays which invoice (reconciliation, 照合).
 
 ## Status
 
-Stages 1 and 2 are finished. This list shows only what is actually done.
+Stages 1 to 3 are finished. This list shows only what is actually done.
 
 - [x] `POST /invoices`: validates the invoice, calculates totals, saves it, returns `201`
 - [x] `GET /invoices/{id}`: returns the invoice with its items, or `404`
 - [x] `GET /invoices`: lists invoice summaries, filtered by vendor and due date, with cursor pagination
+- [x] `POST /reconcile`: suggests matches between bank transactions and invoices; saves nothing
 - [x] `GET /healthz`
 - [x] Tax calculated per tax rate and rounded down once per rate, not per line
 - [x] Two stores behind one `Store` interface: PostgreSQL when `DATABASE_URL` is set, in memory otherwise
-- [x] PostgreSQL: an invoice and its items are saved in one transaction; indexes for both list queries
+- [x] PostgreSQL: an invoice and its items are saved in one transaction; indexes for the list queries and for lookups by total
 - [x] Tests for the domain, both stores and the HTTP handlers. The PostgreSQL tests run against a separate test database.
 - [x] CI on GitHub Actions: `gofmt`, `go vet`, `go test -race`, with a PostgreSQL service so the database tests run on every push
 
 Not done yet:
 
-- [ ] Stage 3: `POST /reconcile` to match bank transactions to open invoices
 - [ ] Stage 4: linting with `golangci-lint`, Dockerfile, graceful shutdown
 - [ ] Schema migrations. `db/schema.sql` only runs when the database volume is empty, so a schema change means resetting the local database (see below).
 - [ ] Updating or deleting invoices
+- [ ] Applying matches: invoices have no "paid" status yet, so a paid invoice can be suggested again
+- [ ] Fuzzy matching: amounts must be equal, so a payment that arrives minus the bank transfer fee (振込手数料) is unmatched
 
 ## Requirements
 
@@ -105,11 +107,33 @@ curl -i 'localhost:8080/invoices?due_before=2026-12-31&limit=2'
 
 The list returns summaries without items, sorted by due date, then ID. When more invoices exist, the response includes `next_cursor`. Pass it back unchanged as `cursor` to get the next page. When it is missing, you have the last page. Pages stay correct when new invoices are added in between, because the cursor marks a position in the sort order, not a row count.
 
+Suggest which payment pays which invoice:
+
+```sh
+curl -i -X POST localhost:8080/reconcile -d '{"transactions": [
+  {"id": "tx_1", "date": "2026-11-28", "amount": 2266, "payer": "Example Supplies"},
+  {"id": "tx_2", "date": "2026-11-29", "amount": 999,  "payer": "Nobody"}
+]}'
+```
+
+```json
+{"matched":[{"transaction_id":"tx_1","invoice_id":"342d3e97-..."}],"ambiguous":[],"unmatched":["tx_2"]}
+```
+
+Every transaction ends up in exactly one list:
+
+1. The candidates are invoices whose `total` equals the `amount` exactly.
+2. If there are several candidates and some have a `vendor` equal to the `payer`, only those are kept. The payer name only breaks ties, because bank payer names are often written differently (for example in half-width katakana).
+3. One candidate: `matched`. None: `unmatched`. Several: `ambiguous`, with the candidate invoice IDs, for a person to decide.
+4. If two or more transactions would match the same invoice, they are all `ambiguous`, whatever their order in the request. A transaction that is already ambiguous does not count as a claim, so it does not stop another transaction from matching one of its candidates.
+
+The endpoint saves nothing, so sending the same request twice is harmless. A request takes 1 to 1000 transactions, each with a unique `id`, an `amount` above 0 and a `date` (`YYYY-MM-DD`). The server asks the database only for invoices whose total equals one of the amounts (`WHERE total = ANY($1)`), then matches them in Go with a map from amount to invoices, in O(n + m) time.
+
 Errors use the matching status code and a JSON body such as `{"error":"invalid invoice: vendor is required"}`:
 
 | Status | When |
 |---|---|
-| `400` | The body is not valid JSON, has unknown fields, or fails validation; or a list parameter or cursor is invalid |
+| `400` | The body is not valid JSON, has unknown fields, or fails validation; a list parameter or cursor is invalid; or a reconcile transaction is invalid |
 | `404` | No invoice has that ID |
 | `500` | The store failed |
 
@@ -142,11 +166,12 @@ These tests **empty the tables** before each test. That is why they read `TEST_D
 cmd/server/         entry point: reads the environment, picks the store, starts the server
 internal/invoice/   domain: types, validation, tax calculation, Store interface, in-memory store
 internal/postgres/  PostgreSQL store (database/sql with the pgx driver)
+internal/reconcile/ matching rules for bank transactions and invoices (no storage, no HTTP)
 internal/httpapi/   HTTP: routes, JSON handlers, list cursor, error responses
 db/                 schema.sql and the script that creates the test database
 ```
 
-`internal/postgres` imports `internal/invoice`, never the other way round: the domain does not know where it is stored.
+`internal/postgres` and `internal/reconcile` import `internal/invoice`, never the other way round: the domain does not know where it is stored or how payments are matched.
 
 ## License
 
