@@ -63,6 +63,35 @@ func TestSuggest(t *testing.T) {
 				Unmatched: []string{"tx_1", "tx_4"},
 			},
 		},
+		{
+			// Rule 4: two payments, one invoice. Neither may claim it.
+			name: "two transactions claim the same invoice: both ambiguous",
+			txns: []Transaction{
+				{ID: "tx_1", Amount: 2266},
+				{ID: "tx_2", Amount: 2266},
+				{ID: "tx_3", Amount: 5400, Payer: "Kanto Foods"},
+			},
+			want: Result{
+				Matched: []Match{{TransactionID: "tx_3", InvoiceID: "inv_c"}},
+				Ambiguous: []Ambiguity{
+					{TransactionID: "tx_1", InvoiceIDs: []string{"inv_a"}},
+					{TransactionID: "tx_2", InvoiceIDs: []string{"inv_a"}},
+				},
+			},
+		},
+		{
+			name: "the same two transactions in reverse order: same answer",
+			txns: []Transaction{
+				{ID: "tx_2", Amount: 2266},
+				{ID: "tx_1", Amount: 2266},
+			},
+			want: Result{
+				Ambiguous: []Ambiguity{
+					{TransactionID: "tx_2", InvoiceIDs: []string{"inv_a"}},
+					{TransactionID: "tx_1", InvoiceIDs: []string{"inv_a"}},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {

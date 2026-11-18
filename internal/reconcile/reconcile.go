@@ -42,8 +42,11 @@ type Result struct {
 //  2. If there is more than one candidate and some have a Vendor equal to
 //     the Payer, keep only those. If none do, keep them all.
 //  3. Exactly one candidate: matched. None: unmatched. More: ambiguous.
+//  4. If several transactions would match the same invoice, they are all
+//     ambiguous: the order of the request must not pick a winner.
 //
-// It runs in O(n + m) for n transactions and m invoices, using a map from
+// Rule 4 needs every claim counted before anything is decided, so there are
+// two passes: gather the candidates, then decide. It runs in O(n + m) for n transactions and m invoices, using a map from
 // amount to invoices instead of comparing every pair.
 func Suggest(txns []Transaction, invoices []invoice.Invoice) Result {
 	var res Result
@@ -53,7 +56,12 @@ func Suggest(txns []Transaction, invoices []invoice.Invoice) Result {
 	for _, inv := range invoices {
 		byAmount[inv.Total] = append(byAmount[inv.Total], inv)
 	}
-	for _, tx := range txns {
+
+	candidatesOf := make([][]invoice.Invoice, len(txns))
+	claims := map[string]int{}
+
+	// Pass 1: gather each transaction's candidates and count the claims.
+	for i, tx := range txns {
 		candidates := byAmount[tx.Amount]
 		if len(candidates) > 1 {
 			var same []invoice.Invoice
@@ -66,11 +74,24 @@ func Suggest(txns []Transaction, invoices []invoice.Invoice) Result {
 				candidates = same
 			}
 		}
+		candidatesOf[i] = candidates
+		if len(candidates) == 1 {
+			claims[candidates[0].ID]++
+		}
+	}
+
+	// Pass 2: decide, now that every claim is known.
+	for i, tx := range txns {
+		candidates := candidatesOf[i]
 		switch len(candidates) {
 		case 0:
 			res.Unmatched = append(res.Unmatched, tx.ID)
 		case 1:
-			res.Matched = append(res.Matched, Match{TransactionID: tx.ID, InvoiceID: candidates[0].ID})
+			if claims[candidates[0].ID] > 1 {
+				res.Ambiguous = append(res.Ambiguous, Ambiguity{TransactionID: tx.ID, InvoiceIDs: []string{candidates[0].ID}})
+			} else {
+				res.Matched = append(res.Matched, Match{TransactionID: tx.ID, InvoiceID: candidates[0].ID})
+			}
 		default:
 			var ids []string
 			for _, inv := range candidates {
