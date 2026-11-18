@@ -26,6 +26,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /invoices", s.handleCreateInvoice)
 	mux.HandleFunc("GET /invoices", s.handleListInvoices)
 	mux.HandleFunc("GET /invoices/{id}", s.handleGetInvoice)
+	mux.HandleFunc("POST /reconcile", s.handleReconcile)
 	return mux
 }
 
